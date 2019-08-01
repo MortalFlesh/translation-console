@@ -73,7 +73,8 @@ let skipOn option action p =
     else action p
 
 Target.create "Clean" <| skipOn "no-clean" (fun _ ->
-    !! "./**/bin"
+    !! "./**/bin/Release"
+    ++ "./**/bin/Debug"
     ++ "./**/obj"
     |> Shell.cleanDirs
 )

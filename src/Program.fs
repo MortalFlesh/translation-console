@@ -1,4 +1,8 @@
+open MF.ConsoleApplication
 
 [<EntryPoint>]
 let main argv =
-    0
+    consoleApplication {
+        title "Translations"
+    }
+    |> run argv
