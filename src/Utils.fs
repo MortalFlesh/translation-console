@@ -33,12 +33,11 @@ module internal Async =
     /// Apply a monadic function to an Async value
     let bind f xA = async.Bind(xA,f)
 
+type FilePath = string
+type Lines = string list
 
-
-module File =
+module Files =
     open System.IO
-
-    type FilePath = string
 
     let private hasExtension (name: FilePath) (extension: string) =
         name.EndsWith(extension)
@@ -60,8 +59,6 @@ module File =
 
         getAllFiles dirs
 
-    type Lines = string list
-
     let private readAllLinesAsync file: Async<FilePath * Lines> =
         file
         |> File.ReadAllLinesAsync
@@ -78,3 +75,59 @@ module File =
         |> loadContents
         |> Async.RunSynchronously
         |> Array.toList
+
+[<RequireQualifiedAccess>]
+module internal String =
+    open System
+
+    let isNullOrEmpty (string: string) =
+        string |> String.IsNullOrWhiteSpace
+
+    let trim (char: char) (string: string) =
+        string.Trim().Trim(char)
+
+[<AutoOpen>]
+module internal Regex =
+    open System.Text.RegularExpressions
+
+    // http://www.fssnip.net/29/title/Regular-expression-active-pattern
+    let internal (|Regex|_|) pattern input =
+        let m = Regex.Match(input, pattern)
+        if m.Success then
+            List.tail [ for g in m.Groups -> g.Value ]
+            |> List.filter (String.isNullOrEmpty >> not)
+            |> Some
+        else None
+
+[<RequireQualifiedAccess>]
+module internal Debug =
+    open System.Collections.Concurrent
+
+    let private debugLog = new ConcurrentBag<string>()
+
+    let message string =
+        debugLog.Add(string)
+
+    let all showMatch showIgnored =
+        debugLog
+        |> Seq.map (function
+            | Regex "^\[(.*?)\]\s(.*?)\s*->\s\[(.*?)\]\s*$" [ title; original; texts ] ->
+                if showMatch then
+                    sprintf "<c:cyan>[%s]</c> <c:white>%s</c> <c:gray>-> [</c><c:green>%s</c><c:gray>]</c>" title original texts
+                else ""
+
+            | Regex "^\[skip(.*?)\]\s(.*?)\s*$" [ title; text ] ->
+                if showMatch then
+                    sprintf "<c:cyan>[skip%s]</c> <c:pink>%s</c>" title text
+                else ""
+
+            | Regex "^\[(.*?)\]\s(.*?)\s*$" [ title; original ] ->
+                if showIgnored then
+                    sprintf "<c:cyan>[%s]</c> <c:gray>%s</c>" title original
+                else ""
+
+            | message -> message
+        )
+        |> Seq.filter (String.isNullOrEmpty >> not)
+        |> Seq.rev
+        |> Seq.toList

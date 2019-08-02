@@ -27,3 +27,4 @@ tools/
 # Console
 !bin/console
 data/
+data_backup/
