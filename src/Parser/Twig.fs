@@ -128,5 +128,5 @@ module internal Twig =
             | string when FileExtension |> Extension.equals extension ->
                 match string with
                 | Regex "^'.*?'$" _ -> Some (sprintf "%s | trans" string)
-                | _ -> Some (sprintf "{%% trans %%}%s{%% endtrans %%})" string)
+                | _ -> Some (sprintf "{%% trans %%}%s{%% endtrans %%}" string)
             | _ -> None
