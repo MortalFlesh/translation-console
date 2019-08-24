@@ -86,6 +86,34 @@ module internal String =
     let trim (char: char) (string: string) =
         string.Trim().Trim(char)
 
+    let toUrlSafe (string: string) =
+        let (=>) a b = a, b
+        let replacements = [
+            ['á'; 'Á'] => 'a'
+            ['č'; 'Č'] => 'c'
+            ['ď'; 'Ď'] => 'd'
+            ['ě'; 'Ě'] => 'e'
+            ['é'; 'É'] => 'e'
+            ['í'; 'Í'] => 'i'
+            ['ó'; 'Ó'] => 'o'
+            ['ř'; 'Ř'] => 'r'
+            ['š'; 'Š'] => 's'
+            ['ť'; 'Ť'] => 't'
+            ['ů'; 'Ů'] => 'u'
+            ['ú'; 'Ú'] => 'u'
+            ['ý'; 'Ý'] => 'y'
+            ['ž'; 'Ž'] => 'z'
+            ['.'; '?'; '!'; ','; '_'; ':'; '\''; '"'; ' '] => '-'
+        ]
+
+        replacements
+        |> List.fold (fun string (keys, replace) ->
+            keys
+            |> List.fold (fun (string: string) key ->
+                string.Replace(key, replace)
+            ) string
+        ) (string.ToLower())
+
 [<AutoOpen>]
 module internal Regex =
     open System.Text.RegularExpressions

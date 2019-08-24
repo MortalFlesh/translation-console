@@ -1,5 +1,6 @@
 open MF.ConsoleApplication
 open MF.TranslationConsole
+open System.IO
 
 [<EntryPoint>]
 let main argv =
@@ -145,6 +146,49 @@ let main argv =
                             input |> Input.isOptionValueSet "debug-show-ignored"
 
                     Debug.all showMatch showIgnored |> output.Messages ""
+
+                output.Success "Done"
+                ExitCode.Success
+        }
+
+        command "translation:url" {
+            Description = "Create a new file from the given, and replace all translates (keys & values) with their url-safe variant."
+            Help = None
+            Arguments = [
+                Argument.required "file" "File with translates."
+                Argument.required "output" "File with URL safe translates."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let file = input |> Input.getArgumentValue "file"
+                let outputFile = input |> Input.getArgumentValue "output"
+
+                if file |> File.Exists |> not then
+                    failwithf "File %s does not exits." file
+
+                let write lines =
+                    let lines = lines |> Seq.toArray
+                    File.WriteAllLines(outputFile, lines)
+
+                file
+                |> File.ReadAllLines
+                |> Seq.ofArray
+                |> Seq.choose (function
+                    | Regex "'(.*?)':\s+'(.*?)'" [key; value]
+                    | Regex "\"(.*?)\":\s+'(.*?)'" [key; value]
+                    | Regex "\"(.*?)\":\s+\"(.*?)\"" [key; value]
+                    | Regex "'(.*?)':\s+\"(.*?)\"" [key; value]
+                    | Regex "([^:]*?):([^:]*)" [key; value] -> Some (key, value)
+                    | _ -> None
+                )
+                |> Seq.map (fun (key, value) ->
+                    sprintf "'%s': '%s'"
+                        (key.Trim() |> String.toUrlSafe)
+                        (value.Trim() |> String.toUrlSafe)
+                )
+                |> write
 
                 output.Success "Done"
                 ExitCode.Success
