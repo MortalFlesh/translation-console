@@ -193,5 +193,59 @@ let main argv =
                 output.Success "Done"
                 ExitCode.Success
         }
+
+        command "translation:use" {
+            Description = "Use translated file and replace values by keys."
+            Help = None
+            Arguments = [
+                Argument.required "translated" "File with translates."
+                Argument.required "target" "File with not-translated values."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let translated = input |> Input.getArgumentValue "translated"
+                let target = input |> Input.getArgumentValue "target"
+
+                if translated |> File.Exists |> not then
+                    failwithf "File %s does not exits." translated
+                if target |> File.Exists |> not then
+                    failwithf "File %s does not exits." translated
+
+                let write lines =
+                    let lines = lines |> Seq.toArray
+                    //lines
+                    //|> List.ofSeq
+                    //|> output.Messages "  "
+                    File.WriteAllLines(target, lines)
+
+                let targetLines =
+                    target
+                    |> File.ReadAllLines
+                    |> Seq.ofArray
+
+                translated
+                |> File.ReadAllLines
+                |> Seq.ofArray
+                |> Seq.sortBy String.length
+                |> Seq.rev
+                |> Seq.choose (function
+                    | Regex "'(.*?)':\s+'(.*?)'" [key; value]
+                    | Regex "\"(.*?)\":\s+'(.*?)'" [key; value]
+                    | Regex "\"(.*?)\":\s+\"(.*?)\"" [key; value]
+                    | Regex "'(.*?)':\s+\"(.*?)\"" [key; value]
+                    | Regex "([^:]*?):([^:]*)" [key; value] -> Some (key, value)
+                    | _ -> None
+                )
+                |> Seq.fold (fun (target: string seq) (key, value) ->
+                    target
+                    |> Seq.map (fun line -> line.Replace(key, value))
+                ) targetLines
+                |> write
+
+                output.Success "Done"
+                ExitCode.Success
+        }
     }
     |> run argv
