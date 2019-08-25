@@ -247,5 +247,48 @@ let main argv =
                 output.Success "Done"
                 ExitCode.Success
         }
+
+        command "translation:extract" {
+            Description = "Extract translates from file."
+            Help = None
+            Arguments = [
+                Argument.required "file" "File with texts."
+                Argument.required "output" "File for transtlates."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let file = input |> Input.getArgumentValue "file"
+                let outputFile = input |> Input.getArgumentValue "output"
+
+                if file |> File.Exists |> not then
+                    failwithf "File %s does not exits." file
+
+                let write lines =
+                    let lines = lines |> Seq.toArray
+                    //lines
+                    //|> List.ofSeq
+                    //|> output.Messages "  "
+                    File.WriteAllLines(outputFile, lines)
+
+                file
+                |> File.ReadAllLines
+                |> Seq.choose (function
+                    | Regex "'(.*?)'" [text] -> // strings
+                        Some [sprintf "'%s': '%s'" text text]
+                    | Regex "(?:\s*(\S{1}.*?)?<.+>(.*?)<\/.+?>(.*?\S{1})*\s*)+" texts ->    // text in html
+                        Some <| (texts |> List.map (fun text -> sprintf "'%s': '%s'" text text))
+                    | Regex "^\s*([A-z\- ,]*[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ]+[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ \(\)A-z0-9\?,\.\!\-:\"&;]*)" [text] -> // just text
+                        Some [sprintf "'%s': '%s'" text text]
+                    | _ -> None
+                )
+                |> Seq.concat
+                |> Seq.distinct
+                |> write
+
+                output.Success "Done"
+                ExitCode.Success
+        }
     }
     |> run argv
