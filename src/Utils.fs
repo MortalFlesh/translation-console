@@ -77,7 +77,7 @@ module Files =
         |> Array.toList
 
 [<RequireQualifiedAccess>]
-module internal String =
+module String =
     open System
 
     let isNullOrEmpty (string: string) =
@@ -85,6 +85,9 @@ module internal String =
 
     let trim (char: char) (string: string) =
         string.Trim().Trim(char)
+    
+    let trimSpace (string: string) =
+        string.Trim()
 
     let toUrlSafe (string: string) =
         let (=>) a b = a, b

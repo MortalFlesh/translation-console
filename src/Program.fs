@@ -290,5 +290,69 @@ let main argv =
                 output.Success "Done"
                 ExitCode.Success
         }
+
+        command "sql:update" {
+            Description = "Replace inserts in file for updates."
+            Help = None
+            Arguments = [
+                Argument.required "file" "File with inserts."
+                Argument.required "output" "File for updates."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let file = input |> Input.getArgumentValue "file"
+                let outputFile = input |> Input.getArgumentValue "output"
+
+                if file |> File.Exists |> not then
+                    failwithf "File %s does not exits." file
+
+                let write lines =
+                    let lines = lines |> Seq.toArray
+                    //lines
+                    //|> List.ofSeq
+                    //|> output.Messages "  "
+                    File.AppendAllLines(outputFile, lines)
+
+                file
+                |> File.ReadAllLines
+                |> Seq.choose (function
+                    | Regex "INSERT INTO (\w+) \((.*?)\) VALUES \((.*?)\)\"?[\);$]{1}" [table; columns; values] as line ->
+                        let columns = columns.Split "," |> Seq.map String.trimSpace
+
+                        match values.Split "," |> Seq.map (String.trim '\'') with
+                        | values when (values |> Seq.length) = (columns |> Seq.length) ->
+                            let updates =
+                                values
+                                |> Seq.zip columns
+
+                            let id =
+                                updates
+                                |> Seq.find (fst >> (=) "id")
+                                |> snd
+
+                            let updates =
+                                updates
+                                |> Seq.filter (fun (column, _) -> column <> "created" && column <> "updated" && column <> "id")
+                                |> Seq.map (fun (column, value) -> sprintf "%s = '%s'" column value) |> String.concat ", "
+
+                            //printfn "- %s -" table
+                            //|> Seq.iter (printfn " * %A")
+                            //printfn "----------"
+
+                            sprintf "UPDATE %s SET %s WHERE id = %s;" table updates id
+                            |> Some
+                        | _ ->
+                            printfn "%s" line
+                            None
+                    | _ -> None
+                )
+                |> Seq.distinct
+                |> write
+
+                output.Success "Done"
+                ExitCode.Success
+        }
     }
     |> run argv
