@@ -26,7 +26,7 @@ let main argv =
             Initialize = None
             Interact = None
             Execute = fun (input, output) ->
-                let toOption = List.map (fun value -> value, "")
+                let toOption = List.map List.singleton
 
                 let dirs = input |> Input.getArgumentValueAsList "dirs"
                 let extensions = input |> Input.getOptionValueAsList "extension"
@@ -114,15 +114,17 @@ let main argv =
                 | _ ->
                     let colorizeTranslate (original, replacement) =
                         if original = replacement
-                        then original, sprintf "<c:red>%s</c>" replacement
-                        else original, sprintf "<c:pink>%s</c>" replacement
+                        then [original; sprintf "<c:red>%s</c>" replacement]
+                        else [original; sprintf "<c:pink>%s</c>" replacement]
 
                     translatedFiles
                     |> List.iter (fun file ->
                         match showAll, file.Translates |> List.map Translate.value with
                         | false, [] -> ()
                         | true, [] ->
-                            ["<c:gray>No translates</c>", ""]
+                            [
+                                ["<c:gray>No translates</c>"]
+                            ]
                             |> output.SimpleOptions file.Name
                         | _, translates ->
                             translates
