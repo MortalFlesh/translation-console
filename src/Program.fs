@@ -240,9 +240,23 @@ let main argv =
                     | Regex "([^:]*?):([^:]*)" [key; value] -> Some (key, value)
                     | _ -> None
                 )
+                |> Seq.map (tee (fun (k, v) -> if output.IsDebug() then output.Message <| sprintf "- %A: %A" k v))
                 |> Seq.fold (fun (target: string seq) (key, value) ->
                     target
-                    |> Seq.map (fun line -> line.Replace(key, value))
+                    |> Seq.mapi (fun index line ->
+                        let replaced = line.Replace(key, value)
+
+                        //if output.IsDebug() then
+                        //    output.Message <| sprintf "<c:gray>% 3i|</c> %s  %s" index line (if replaced = line then "<c:gray>// same</c>" else "// replaced")
+
+                        if output.IsVerbose() && replaced <> line then
+                            if output.IsVeryVerbose() then
+                                output.Message <| sprintf "Replaced line <c:yellow>(%s)</c>" key
+                            else
+                                output.Message "Replaced line"
+
+                        replaced
+                    )
                 ) targetLines
                 |> write
 
@@ -277,17 +291,252 @@ let main argv =
                 file
                 |> File.ReadAllLines
                 |> Seq.choose (function
-                    | Regex "'(.*?)'" [text] -> // strings
-                        Some [sprintf "'%s': '%s'" text text]
-                    | Regex "(?:\s*(\S{1}.*?)?<.+>(.*?)<\/.+?>(.*?\S{1})*\s*)+" texts ->    // text in html
-                        Some <| (texts |> List.map (fun text -> sprintf "'%s': '%s'" text text))
-                    | Regex "^\s*([A-z\- ,]*[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ]+[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ \(\)A-z0-9\?,\.\!\-:\"&;]*)" [text] -> // just text
-                        Some [sprintf "'%s': '%s'" text text]
+                    | Regex "'(\/v\/.*?)'" [path] -> // url paths
+                        Some [sprintf "'%s': '%s'" path path]
+                    //| Regex "'(.*?)'" [text] -> // strings
+                    //    Some [sprintf "'%s': '%s'" text text]
+                    //| Regex "(?:\s*(\S{1}.*?)?<.+>(.*?)<\/.+?>(.*?\S{1})*\s*)+" texts ->    // text in html
+                    //    Some <| (texts |> List.map (fun text -> sprintf "'%s': '%s'" text text))
+                    //| Regex "^\s*([A-z\- ,]*[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ]+[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ \(\)A-z0-9\?,\.\!\-:\"&;]*)" [text] -> // just text
+                    //    Some [sprintf "'%s': '%s'" text text]
                     | _ -> None
                 )
                 |> Seq.concat
                 |> Seq.distinct
                 |> write
+
+                output.Success "Done"
+                ExitCode.Success
+        }
+
+        command "translation:routes" {
+            Description = "Extract and translate routes of Symfony Controllers from dir."
+            Help = None
+            Arguments = [
+                Argument.required "dir" "Dir with controllers."
+                Argument.required "output" "Directory for transtlates."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let dir = input |> Input.getArgumentValue "dir"
+                let outputDir = input |> Input.getArgumentValue "output"
+
+                // todo - replace translates in Controllers - mozna to bude nakonec k nicemu a udelam to rucne...
+
+                (* if file |> File.Exists |> not then
+                    failwithf "File %s does not exits." file
+
+                let write lines =
+                    let lines = lines |> Seq.toArray
+                    //lines
+                    //|> List.ofSeq
+                    //|> output.Messages "  "
+                    File.WriteAllLines(outputFile, lines)
+
+                file
+                |> File.ReadAllLines
+                |> Seq.choose (function
+                    | Regex "'(\/v\/.*?)'" [path] -> // url paths
+                        Some [sprintf "'%s': '%s'" path path]
+                    //| Regex "'(.*?)'" [text] -> // strings
+                    //    Some [sprintf "'%s': '%s'" text text]
+                    //| Regex "(?:\s*(\S{1}.*?)?<.+>(.*?)<\/.+?>(.*?\S{1})*\s*)+" texts ->    // text in html
+                    //    Some <| (texts |> List.map (fun text -> sprintf "'%s': '%s'" text text))
+                    //| Regex "^\s*([A-z\- ,]*[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ]+[ěščřžýáíéóúůďťňĎŇŤŠČŘŽÝÁÍÉÚŮ \(\)A-z0-9\?,\.\!\-:\"&;]*)" [text] -> // just text
+                    //    Some [sprintf "'%s': '%s'" text text]
+                    | _ -> None
+                )
+                |> Seq.concat
+                |> Seq.distinct
+                |> write *)
+
+                output.Success "Done"
+                ExitCode.Success
+        }
+
+        command "translation:files:copy" {
+            Description = "Copy files of one language to other."
+            Help = None
+            Arguments = [
+                Argument.required "source-language" "Language you want to copy from."
+                Argument.required "target-language" "Language you want to copy to."
+                Argument.requiredArray "dirs" "Directories you want to search files (.yaml)."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let toOption = List.map List.singleton
+
+                let sourceLanguage = input |> Input.getArgumentValue "source-language"
+                let targetLanguage = input |> Input.getArgumentValue "target-language"
+                let dirs = input |> Input.getArgumentValueAsList "dirs"
+
+                output.Message "Loading files ..."
+                let files =
+                    [
+                        sprintf ".%s.yaml" sourceLanguage
+                    ]
+                    |> Files.loadAllFileContents dirs
+                if output.IsVerbose() then
+                    files
+                    |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
+                    |> output.Options "Loaded files:"
+                output.Success "Done"
+
+                output.Message "Copy files ..."
+                let lang language = sprintf ".%s." language
+                let progress = files |> List.length |> output.ProgressStart "Copying ..."
+
+                files
+                |> List.iter (fun (file, _) ->
+                    File.Copy(file, file.Replace(lang sourceLanguage, lang targetLanguage), true)
+                    progress |> output.ProgressAdvance
+                )
+                progress |> output.ProgressFinish
+                output.Success "Done"
+
+                ExitCode.Success
+        }
+
+        command "translation:files:replace" {
+            Description = "Replace translates in files by configuration."
+            Help = None
+            Arguments = [
+                Argument.required "language" "Language of file (must be in the file name) to replace."
+                Argument.required "configuration" "Configuration of replacing (Options: k->v)."
+                Argument.requiredArray "dirs" "Directories you want to search files (.yaml)."
+            ]
+            Options = [
+                Option.noValue "force" (Some "f") "Whether to update files."
+            ]
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let toOption = List.map List.singleton
+
+                let language = input |> Input.getArgumentValue "language"
+                let configuration = input |> Input.getArgumentValue "configuration"
+                let dirs = input |> Input.getArgumentValueAsList "dirs"
+
+                output.Message "Loading files ..."
+                let files =
+                    [
+                        sprintf ".%s.yaml" language
+                    ]
+                    |> Files.loadAllFileContents dirs
+                if output.IsVerbose() then
+                    files
+                    |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
+                    |> output.Options "Loaded files:"
+                output.Success "Done"
+
+                match configuration with
+                | "k->v" ->
+                    output.Section "Replacing Keys to Values"
+                    let progress = files |> List.length |> output.ProgressStart "Copying ..."
+
+                    files
+                    |> List.iter (fun (path, lines) ->
+                        let replacedLines =
+                            lines
+                            |> List.map (fun line ->
+                                match line.Split(":", 2) with
+                                | [| key; _value |] -> sprintf "%s: %s" (key.Trim()) (key.Trim())
+                                | _ -> line
+                            )
+
+                        File.WriteAllLines(path, replacedLines)
+                        progress |> output.ProgressAdvance
+                    )
+                    progress |> output.ProgressFinish
+
+                    output.Success "Done"
+                    ExitCode.Success
+                | unknown ->
+                    output.Error <| sprintf "Uknonw configuration %A given." unknown
+                    ExitCode.Error
+        }
+
+        command "translation:files:translate" {
+            Description = "Replace translates by placeholders in files."
+            Help = None
+            Arguments = [
+                Argument.required "language" "Language of file (must be in the file name) to replace."
+                Argument.required "translates" "Directory you want to search translates in (.yaml)."
+                Argument.requiredArray "dirs" "Directories you want to search files to translate."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let toOption = List.map List.singleton
+
+                let language = input |> Input.getArgumentValue "language"
+                let translates = input |> Input.getArgumentValueAsList "translates"
+                let dirs = input |> Input.getArgumentValueAsList "dirs"
+
+                output.Message "Loading files with translates ..."
+                let translateFiles =
+                    [
+                        sprintf ".%s.yaml" language
+                    ]
+                    |> Files.loadAllFileContents translates
+                if output.IsVerbose() then
+                    translateFiles
+                    |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
+                    |> output.Options "Loaded files with translates:"
+                output.Success "Done"
+
+                output.Message "Loading files ..."
+                let files =
+                    [
+                        ".js"
+                        ".jsx"
+                    ]
+                    |> Files.loadAllFileContents dirs
+                if output.IsVerbose() then
+                    files
+                    |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
+                    |> output.Options "Loaded files:"
+                output.Success "Done"
+
+                output.Section "Replacing translates"
+                let translates =
+                    translateFiles
+                    |> List.collect (fun (_, lines) ->
+                        lines
+                        |> List.choose (fun line ->
+                            match line.Split(":", 2) with
+                            | [| key; value |] -> Some (key.Trim(), value.Trim())
+                            | _ -> None
+                        )
+                    )
+                    |> List.sortByDescending (snd >> String.length)
+
+                let placeholder (key: string) = sprintf "{{%s}}" (key.Trim('\''))
+
+                let progress = translateFiles |> List.length |> output.ProgressStart "Replacing ..."
+
+                files
+                |> List.iter (fun (path, lines) ->
+                    let translatedLines =
+                        lines
+                        |> List.map (fun line ->
+                            translates
+                            |> List.fold (fun (line: string) (key, value) ->
+                                if line.Contains "{{" && line.Contains "}}"
+                                then line
+                                else line.Replace(value.Trim('\''), placeholder key)
+                            ) line
+                        )
+
+                    File.WriteAllLines(path, translatedLines)
+                    progress |> output.ProgressAdvance
+                )
+                progress |> output.ProgressFinish
 
                 output.Success "Done"
                 ExitCode.Success
