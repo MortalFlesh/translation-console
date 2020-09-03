@@ -542,6 +542,134 @@ let main argv =
                 ExitCode.Success
         }
 
+        command "translation:dir:template" {
+            Description = "Translate whole template/ dir by translates and creates a new dir with translated files."
+            Help = None
+            Arguments = [
+                Argument.required "language" "Language of translation (must be in the file name)."
+                Argument.required "translates" "Directory you want to search translates in (<c:yellow>{lang}</c><c:dark-yellow>.yaml</c>)."
+                Argument.required "template" "Template directory you want to translate."
+                Argument.required "target" "Target directory where template dir will be transleted."
+            ]
+            Options = []
+            Initialize = None
+            Interact = Some (fun ({ Input = input; Ask = ask }, output) ->
+                let targetDir = input |> Input.getArgumentValue "target"
+
+                if targetDir |> Directory.Exists then
+                    let targetDeleteQuestion = sprintf "Target dir %s is not empty and will be deleted first, do you wish to continue? [yes/no]:" targetDir
+                    match (ask targetDeleteQuestion).ToLower() with
+                    | "y" | "yes" ->
+                        [ targetDir ]
+                        |> FileSystem.getAllFiles
+                        |> List.iter File.Delete
+
+                        [ targetDir ]
+                        |> FileSystem.getAllDirs
+                        |> List.sortByDescending Directory.depth
+                        |> List.iter Directory.Delete
+
+                        output.Success "Target dir deleted."
+                    | _ -> failwith "Stopped!"
+
+                (input, output)
+            )
+            Execute = fun (input, output) ->
+                let toOption = List.map List.singleton
+
+                let language = input |> Input.getArgumentValue "language"
+                let translates = input |> Input.getArgumentValueAsList "translates"
+                let templateDir = input |> Input.getArgumentValue "template"
+                let targetDir = input |> Input.getArgumentValue "target"
+
+                if templateDir |> Directory.Exists |> not then
+                    failwithf "Template dir %s does not exists." targetDir
+
+                if targetDir |> Directory.Exists then
+                    failwithf "Target dir %s already exists." targetDir
+
+                output.Section "Loading files with translates"
+                let translateFiles =
+                    [
+                        sprintf ".%s.yaml" language
+                    ]
+                    |> Files.loadAllFileContents translates
+                if output.IsVerbose() then
+                    translateFiles
+                    |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
+                    |> output.Options "Loaded files with translates:"
+
+                if translateFiles |> List.isEmpty then
+                    failwithf "There are no translate files for language %s." language
+
+                let translates =
+                    translateFiles
+                    |> List.collect (fun (_, lines) ->
+                        lines
+                        |> List.choose (fun line ->
+                            match line.Split(":", 2) with
+                            | [| key; value |] -> Some (key.Trim(), value.Trim())
+                            | _ -> None
+                        )
+                    )
+                    |> List.sortByDescending (snd >> String.length)
+
+                let differentTranslatesForSamekey =
+                    translates
+                    |> List.distinct
+                    |> List.groupBy fst
+                    |> List.filter (snd >> List.length >> (<) 1)    // > 1 -> find different translates for the same key
+                    |> List.collect snd
+
+                if differentTranslatesForSamekey |> List.isEmpty |> not then
+                    failwithf "There are different translates for keys:\n  %s"
+                        (differentTranslatesForSamekey |> List.map (fun (k, v) -> sprintf "%s: %s" k v) |> String.concat "\n  ")
+                output.Success "Done"
+
+                output.Section "Copy template to target"
+                templateDir |> FileSystem.copyDir targetDir
+                output.Success "Done"
+
+                output.Section "Load files from target dir to translate"
+                let files =
+                    [
+                        ".js"
+                        ".jsx"
+                    ]
+                    |> Files.loadAllFileContents [ targetDir ]
+                if output.IsVerbose() then
+                    files
+                    |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
+                    |> output.Options "Loaded files:"
+                output.Success "Done"
+
+                output.Section "Translate files"
+                let placeholder (key: string) = sprintf "{{%s}}" (key.Trim('\''))
+
+                let progress = translateFiles |> List.length |> output.ProgressStart "Replacing ..."
+
+                files
+                |> List.iter (fun (path, lines) ->
+                    let translatedLines =
+                        lines
+                        |> List.map (fun line ->
+                            translates
+                            |> List.fold (fun (line: string) (key, value) ->
+                                if line.Contains "{{" && line.Contains "}}"
+                                then line.Replace(placeholder key, value.Trim('\''))
+                                else line
+                            ) line
+                        )
+
+                    File.WriteAllLines(path, translatedLines)
+                    progress |> output.ProgressAdvance
+                )
+                progress |> output.ProgressFinish
+
+                output.Success "Done"
+                ExitCode.Success
+        }
+
         command "sql:update" {
             Description = "Replace inserts in file for updates."
             Help = None

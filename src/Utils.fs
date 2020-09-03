@@ -77,6 +77,72 @@ module Files =
         |> Array.toList
 
 [<RequireQualifiedAccess>]
+module FileSystem =
+    open System.IO
+
+    let private writeContent (writer: StreamWriter) content =
+        writer.WriteLine(sprintf "%s" content)
+
+    let writeSeqToFile (filePath: string) (data: string seq) =
+        File.WriteAllLines(filePath, data)
+
+    let writeToFile (filePath: string) data =
+        File.WriteAllText(filePath, data)
+
+    let appendToFile (filePath: string) data =
+        File.AppendAllText(filePath, data)
+
+    let readLines (filePath: string) =
+        File.ReadAllLines(filePath)
+        |> Seq.toList
+
+    let readContent (filePath: string) =
+        File.ReadAllText(filePath)
+
+    let tryReadContent (filePath: string) =
+        if File.Exists filePath then File.ReadAllText(filePath) |> Some
+        else None
+
+    let rec getAllDirs = function
+        | [] -> []
+        | directories -> List.distinct [
+            let childrenDirs = directories |> Seq.collect Directory.EnumerateDirectories
+
+            yield! directories |> List.filter Directory.Exists
+            yield! childrenDirs
+            yield! childrenDirs |> List.ofSeq |> getAllDirs
+        ]
+
+    let rec getAllFiles = function
+        | [] -> []
+        | directories -> [
+            yield! directories |> Seq.collect Directory.EnumerateFiles
+            yield! directories |> Seq.collect Directory.EnumerateDirectories |> List.ofSeq |> getAllFiles
+        ]
+
+    let copyDir target source =
+        if source |> Directory.Exists |> not then failwithf "Source %s does not exists." source
+        if target |> Directory.Exists then failwithf "Target %s already exists." target
+
+        let mkdir = Directory.CreateDirectory >> ignore
+        let replacePath (path: string) = path.Replace(source, target)
+
+        target |> mkdir
+
+        [ source ]
+        |> getAllDirs
+        |> List.iter (replacePath >> mkdir)
+
+        [ source ]
+        |> getAllFiles
+        |> List.iter (fun path -> File.Copy(path, replacePath path, true))
+
+[<RequireQualifiedAccess>]
+module Directory =
+    let depth (path: string) =
+        path.Trim('/').Split "/" |> Seq.length
+
+[<RequireQualifiedAccess>]
 module String =
     open System
 
@@ -85,7 +151,7 @@ module String =
 
     let trim (char: char) (string: string) =
         string.Trim().Trim(char)
-    
+
     let trimSpace (string: string) =
         string.Trim()
 
