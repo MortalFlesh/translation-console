@@ -670,6 +670,50 @@ let main argv =
                 ExitCode.Success
         }
 
+        command "translation:file:value" {
+            Description = "Translate exactly one value by key in a specific file by whole translate file content."
+            Help = None
+            Arguments = [
+                Argument.required "translate" "File you want to use as translate."
+                Argument.required "key" "Key you want to replace in target file."
+                Argument.required "target" "Target file which will be transleted."
+            ]
+            Options = []
+            Initialize = None
+            Interact = None
+            Execute = fun (input, output) ->
+                let toOption = List.map List.singleton
+
+                let translate = input |> Input.getArgumentValue "translate"
+                let key = input |> Input.getArgumentValue "key"
+                let target = input |> Input.getArgumentValue "target"
+
+                if translate |> File.Exists |> not then
+                    failwithf "Translate file %s does not exists." target
+
+                if target |> File.Exists |> not then
+                    failwithf "Target file %s does not exists." target
+
+                output.Section "Loading file with translate"
+                let translateContent = translate |> File.ReadAllText
+                output.Success "Done"
+
+                output.Section "Load target file"
+                let targetContent = target |> File.ReadAllText
+                output.Success "Done"
+
+                output.Section "Translate key in file"
+                let placeholder (key: string) = sprintf "{{%s}}" (key.Trim('\''))
+
+                let translatedContent =
+                    targetContent.Replace(placeholder key, translateContent)
+
+                File.WriteAllText(target, translatedContent)
+
+                output.Success "Done"
+                ExitCode.Success
+        }
+
         command "sql:update" {
             Description = "Replace inserts in file for updates."
             Help = None
