@@ -4,6 +4,9 @@ open System.IO
 
 [<EntryPoint>]
 let main argv =
+    let translate (value: string) = value.Trim('\'').Trim('"')
+    let placeholder = translate >> sprintf "{{%s}}"
+
     consoleApplication {
         title "Translations"
         info ApplicationInfo.MainTitle
@@ -516,8 +519,6 @@ let main argv =
                     )
                     |> List.sortByDescending (snd >> String.length)
 
-                let placeholder (key: string) = sprintf "{{%s}}" (key.Trim('\''))
-
                 let progress = translateFiles |> List.length |> output.ProgressStart "Replacing ..."
 
                 files
@@ -529,7 +530,7 @@ let main argv =
                             |> List.fold (fun (line: string) (key, value) ->
                                 if line.Contains "{{" && line.Contains "}}"
                                 then line
-                                else line.Replace(value.Trim('\''), placeholder key)
+                                else line.Replace(translate value, placeholder key)
                             ) line
                         )
 
@@ -644,8 +645,6 @@ let main argv =
                 output.Success "Done"
 
                 output.Section "Translate files"
-                let placeholder (key: string) = sprintf "{{%s}}" (key.Trim('\''))
-
                 let progress = translateFiles |> List.length |> output.ProgressStart "Replacing ..."
 
                 files
@@ -656,7 +655,7 @@ let main argv =
                             translates
                             |> List.fold (fun (line: string) (key, value) ->
                                 if line.Contains "{{" && line.Contains "}}"
-                                then line.Replace(placeholder key, value.Trim('\''))
+                                then line.Replace(placeholder key, translate value)
                                 else line
                             ) line
                         )
@@ -703,7 +702,6 @@ let main argv =
                 output.Success "Done"
 
                 output.Section "Translate key in file"
-                let placeholder (key: string) = sprintf "{{%s}}" (key.Trim('\''))
 
                 let translatedContent =
                     targetContent.Replace(placeholder key, translateContent)
