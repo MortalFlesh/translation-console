@@ -1,3 +1,0 @@
-#!/bin/bash
-
-dotnet ~/fsharp/translation-console/bin/Debug/netcoreapp3.1/translation-console.dll $@

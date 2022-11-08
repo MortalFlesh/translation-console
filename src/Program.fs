@@ -1,15 +1,24 @@
+open System
+open System.IO
+open MF.ConsoleStyle
 open MF.ConsoleApplication
 open MF.TranslationConsole
-open System.IO
 
 [<EntryPoint>]
 let main argv =
     let translate (value: string) = value.Trim('\'').Trim('"')
     let placeholder = translate >> sprintf "{{%s}}"
+    let inline (</>) a b = Path.Combine(a, b)
 
     consoleApplication {
-        title "Translations"
+        title AssemblyVersionInformation.AssemblyProduct
         info ApplicationInfo.MainTitle
+        version AssemblyVersionInformation.AssemblyVersion
+        description AssemblyVersionInformation.AssemblyDescription
+        meta ("BuildAt", AssemblyVersionInformation.AssemblyMetadata_createdAt)
+
+        gitBranch AssemblyVersionInformation.AssemblyMetadata_gitbranch
+        gitCommit AssemblyVersionInformation.AssemblyMetadata_gitcommit
 
         command "translation:replace" {
             Description = "Replaces the texts with proper translations."
@@ -28,14 +37,14 @@ let main argv =
             ]
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
+            Execute = Execute <| fun (input, output) ->
                 let toOption = List.map List.singleton
 
-                let dirs = input |> Input.getArgumentValueAsList "dirs"
-                let extensions = input |> Input.getOptionValueAsList "extension"
-                let ignoredByUser = input |> Input.getOptionValueAsList "ignore"
+                let dirs = input |> Input.Argument.asList "dirs"
+                let extensions = input |> Input.Option.asList "extension"
+                let ignoredByUser = input |> Input.Option.asList "ignore"
 
-                let showAll = input |> Input.isOptionValueSet "show-all"
+                let showAll = input |> Input.Option.isValueSet "show-all"
 
                 extensions
                 |> List.filter (Translations.isAllowedExtension >> not)
@@ -99,7 +108,7 @@ let main argv =
                 output.NewLine()
 
                 match input with
-                | Input.IsSetOption "force" _ ->
+                | Input.Option.IsSet "force" _ ->
                     output.Section "Replace file contents:"
 
                     translatedFiles
@@ -145,10 +154,10 @@ let main argv =
                 if output.IsVeryVerbose() then
                     output.Section "Debug:"
                     let (showMatch, showIgnored) =
-                        if input |> Input.isOptionValueSet "debug-show-all" then true, true
+                        if input |> Input.Option.isValueSet "debug-show-all" then true, true
                         else
-                            input |> Input.isOptionValueSet "debug-show-match",
-                            input |> Input.isOptionValueSet "debug-show-ignored"
+                            input |> Input.Option.isValueSet "debug-show-match",
+                            input |> Input.Option.isValueSet "debug-show-ignored"
 
                     Debug.all showMatch showIgnored |> output.Messages ""
 
@@ -163,12 +172,15 @@ let main argv =
                 Argument.required "file" "File with translates."
                 Argument.required "output" "File with URL safe translates."
             ]
-            Options = []
+            Options = [
+                Option.noValue "keys" (Some "k") "Wheteher to translate keys only."
+                Option.noValue "values" (Some "v") "Wheteher to translate values only."
+            ]
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
-                let file = input |> Input.getArgumentValue "file"
-                let outputFile = input |> Input.getArgumentValue "output"
+            Execute = Execute <| fun (input, output) ->
+                let file = input |> Input.Argument.value "file"
+                let outputFile = input |> Input.Argument.value "output"
 
                 if file |> File.Exists |> not then
                     failwithf "File %s does not exits." file
@@ -189,9 +201,19 @@ let main argv =
                     | _ -> None
                 )
                 |> Seq.map (fun (key, value) ->
-                    sprintf "'%s': '%s'"
-                        (key.Trim() |> String.toUrlSafe)
-                        (value.Trim() |> String.toUrlSafe)
+                    let (key, value) =
+                        match input with
+                        | Input.Option.IsSet "keys" _ ->
+                            (key.Trim() |> String.toUrlSafe),
+                            value
+                        | Input.Option.IsSet "values" _ ->
+                            key,
+                            (value.Trim() |> String.toUrlSafe)
+                        | _ ->
+                            (key.Trim() |> String.toUrlSafe),
+                            (value.Trim() |> String.toUrlSafe)
+
+                    sprintf "'%s': '%s'" key value
                 )
                 |> write
 
@@ -209,9 +231,9 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
-                let translated = input |> Input.getArgumentValue "translated"
-                let target = input |> Input.getArgumentValue "target"
+            Execute = Execute <| fun (input, output) ->
+                let translated = input |> Input.Argument.value "translated"
+                let target = input |> Input.Argument.value "target"
 
                 if translated |> File.Exists |> not then
                     failwithf "File %s does not exits." translated
@@ -277,9 +299,9 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
-                let file = input |> Input.getArgumentValue "file"
-                let outputFile = input |> Input.getArgumentValue "output"
+            Execute = Execute <| fun (input, output) ->
+                let file = input |> Input.Argument.value "file"
+                let outputFile = input |> Input.Argument.value "output"
 
                 if file |> File.Exists |> not then
                     failwithf "File %s does not exits." file
@@ -322,9 +344,9 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
-                let dir = input |> Input.getArgumentValue "dir"
-                let outputDir = input |> Input.getArgumentValue "output"
+            Execute = Execute <| fun (input, output) ->
+                let dir = input |> Input.Argument.value "dir"
+                let outputDir = input |> Input.Argument.value "output"
 
                 // todo - replace translates in Controllers - mozna to bude nakonec k nicemu a udelam to rucne...
 
@@ -370,12 +392,12 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
+            Execute = Execute <| fun (input, output) ->
                 let toOption = List.map List.singleton
 
-                let sourceLanguage = input |> Input.getArgumentValue "source-language"
-                let targetLanguage = input |> Input.getArgumentValue "target-language"
-                let dirs = input |> Input.getArgumentValueAsList "dirs"
+                let sourceLanguage = input |> Input.Argument.value "source-language"
+                let targetLanguage = input |> Input.Argument.value "target-language"
+                let dirs = input |> Input.Argument.asList "dirs"
 
                 output.Message "Loading files ..."
                 let files =
@@ -417,12 +439,12 @@ let main argv =
             ]
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
+            Execute = Execute <| fun (input, output) ->
                 let toOption = List.map List.singleton
 
-                let language = input |> Input.getArgumentValue "language"
-                let configuration = input |> Input.getArgumentValue "configuration"
-                let dirs = input |> Input.getArgumentValueAsList "dirs"
+                let language = input |> Input.Argument.value "language"
+                let configuration = input |> Input.Argument.value "configuration"
+                let dirs = input |> Input.Argument.asList "dirs"
 
                 output.Message "Loading files ..."
                 let files =
@@ -474,12 +496,12 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
+            Execute = Execute <| fun (input, output) ->
                 let toOption = List.map List.singleton
 
-                let language = input |> Input.getArgumentValue "language"
-                let translates = input |> Input.getArgumentValueAsList "translates"
-                let dirs = input |> Input.getArgumentValueAsList "dirs"
+                let language = input |> Input.Argument.value "language"
+                let translates = input |> Input.Argument.asList "translates"
+                let dirs = input |> Input.Argument.asList "dirs"
 
                 output.Message "Loading files with translates ..."
                 let translateFiles =
@@ -552,10 +574,12 @@ let main argv =
                 Argument.required "template" "Template directory you want to translate."
                 Argument.required "target" "Target directory where template dir will be transleted."
             ]
-            Options = []
+            Options = [
+                Option.noValue "translates-dir" None "Whether to use translates directory instead of file suffix. (<c:yellow>/{lang}/XXX.yaml</c>)"
+            ]
             Initialize = None
             Interact = Some (fun ({ Input = input; Ask = ask }, output) ->
-                let targetDir = input |> Input.getArgumentValue "target"
+                let targetDir = input |> Input.Argument.value "target"
 
                 if targetDir |> Directory.Exists then
                     let targetDeleteQuestion = sprintf "Target dir %s is not empty and will be deleted first, do you wish to continue? [yes/no]:" targetDir
@@ -575,13 +599,11 @@ let main argv =
 
                 (input, output)
             )
-            Execute = fun (input, output) ->
-                let toOption = List.map List.singleton
-
-                let language = input |> Input.getArgumentValue "language"
-                let translates = input |> Input.getArgumentValueAsList "translates"
-                let templateDir = input |> Input.getArgumentValue "template"
-                let targetDir = input |> Input.getArgumentValue "target"
+            Execute = Execute <| fun (input, output) ->
+                let language = input |> Input.Argument.value "language"
+                let translates = input |> Input.Argument.asList "translates"
+                let templateDir = input |> Input.Argument.value "template"
+                let targetDir = input |> Input.Argument.value "target"
 
                 if templateDir |> Directory.Exists |> not then
                     failwithf "Template dir %s does not exists." targetDir
@@ -591,10 +613,13 @@ let main argv =
 
                 output.Section "Loading files with translates"
                 let translateFiles =
-                    [
-                        sprintf ".%s.yaml" language
-                    ]
-                    |> Files.loadAllFileContents translates
+                    match input with
+                    | Input.Option.Has "translates-dir" _ ->
+                        [ ".yaml" ]
+                        |> Files.loadAllFileContents (translates |> List.map ((</>) language))
+                    | _ ->
+                        [ sprintf ".%s.yaml" language ]
+                        |> Files.loadAllFileContents translates
                 if output.IsVerbose() then
                     translateFiles
                     |> List.map (fun (path, lines) -> [ path; lines |> List.length |> string ])
@@ -680,12 +705,12 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
+            Execute = Execute <| fun (input, output) ->
                 let toOption = List.map List.singleton
 
-                let translate = input |> Input.getArgumentValue "translate"
-                let key = input |> Input.getArgumentValue "key"
-                let target = input |> Input.getArgumentValue "target"
+                let translate = input |> Input.Argument.value "translate"
+                let key = input |> Input.Argument.value "key"
+                let target = input |> Input.Argument.value "target"
 
                 if translate |> File.Exists |> not then
                     failwithf "Translate file %s does not exists." target
@@ -722,9 +747,9 @@ let main argv =
             Options = []
             Initialize = None
             Interact = None
-            Execute = fun (input, output) ->
-                let file = input |> Input.getArgumentValue "file"
-                let outputFile = input |> Input.getArgumentValue "output"
+            Execute = Execute <| fun (input, output) ->
+                let file = input |> Input.Argument.value "file"
+                let outputFile = input |> Input.Argument.value "output"
 
                 if file |> File.Exists |> not then
                     failwithf "File %s does not exits." file
