@@ -616,7 +616,7 @@ let main argv =
                     match input with
                     | Input.Option.Has "translates-dir" _ ->
                         [ ".yaml" ]
-                        |> Files.loadAllFileContents (translates |> List.map ((</>) language))
+                        |> Files.loadAllFileContents (translates |> List.map (fun dir -> dir </> language))
                     | _ ->
                         [ sprintf ".%s.yaml" language ]
                         |> Files.loadAllFileContents translates
