@@ -23,3 +23,11 @@ paket-files/
 
 # Tools
 tools/
+
+# Console
+!bin/console
+data/
+data_backup/
+
+# App
+AssemblyInfo.fs

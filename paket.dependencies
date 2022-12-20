@@ -1,8 +1,9 @@
-framework: netcoreapp2.2
+source https://api.nuget.org/v3/index.json
+framework: net6.0
 storage: none
 
-source https://api.nuget.org/v3/index.json
-nuget FSharp.Core
+nuget FSharp.Core ~> 6.0
+nuget MF.ConsoleApplication ~> 4.2
 
 // [ FAKE GROUP ]
 group Build
@@ -10,5 +11,8 @@ group Build
     source https://api.nuget.org/v3/index.json
     nuget Fake.DotNet.Cli
     nuget Fake.IO.FileSystem
+    nuget Fake.IO.Zip
     nuget Fake.Core.Target
-    nuget Fake.Core.UserInput
+    nuget Fake.DotNet.AssemblyInfoFile
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.Tools.Git

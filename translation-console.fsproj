@@ -2,7 +2,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <PackageId>MF.TranslationConsole</PackageId>
     <Version>0.0.0</Version>
@@ -10,6 +10,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="src/Utils.fs" />
+    <Compile Include="src/Types.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="src/Parser/Html.fs" />
+    <Compile Include="src/Parser/Twig.fs" />
+    <Compile Include="src/Parser/Php.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="src/Translation.fs" />
     <Compile Include="src/Program.fs" />
   </ItemGroup>
 

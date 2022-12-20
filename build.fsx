@@ -1,126 +1,252 @@
 #load ".fake/build.fsx/intellisense.fsx"
+open System
+
 open Fake.Core
 open Fake.DotNet
 open Fake.IO
+open Fake.IO.FileSystemOperators
 open Fake.IO.Globbing.Operators
 open Fake.Core.TargetOperators
+open Fake.Tools.Git
 
-// =============================================================================================
-// === Build scripts ===========================================================================
-// ---------------------------------------------------------------------------------------------
+// ========================================================================================================
+// === F# / Console Application fake build ======================================================== 2.2.0 =
+// --------------------------------------------------------------------------------------------------------
 // Options:
 //  - no-clean   - disables clean of dirs in the first step (required on CI)
 //  - no-lint    - lint will be executed, but the result is not validated
-// =============================================================================================
+// --------------------------------------------------------------------------------------------------------
+// Table of contents:
+//      1. Information about project, configuration
+//      2. Utilities, DotnetCore functions
+//      3. FAKE targets
+//      4. FAKE targets hierarchy
+// ========================================================================================================
 
-let tee f a =
-    f a
-    a
+// --------------------------------------------------------------------------------------------------------
+// 1. Information about the project to be used at NuGet and in AssemblyInfo files and other FAKE configuration
+// --------------------------------------------------------------------------------------------------------
 
-module private DotnetCore =
-    let run cmd workingDir =
-        let options =
-            DotNet.Options.withWorkingDirectory workingDir
-            >> DotNet.Options.withRedirectOutput true
+let project = "Translation Console"
+let summary = "Simple console application to extract/map translates in files."
 
-        DotNet.exec options cmd ""
+let changeLog = Some "CHANGELOG.md"
+let gitCommit = Information.getCurrentSHA1(".")
+let gitBranch = Information.getBranchName(".")
+let releaseDir = "./dist"
 
-    let runOrFail cmd workingDir =
-        run cmd workingDir
-        |> tee (fun result ->
-            if result.ExitCode <> 0 then failwithf "'dotnet %s' failed in %s" cmd workingDir
-        )
+/// Runtime IDs: https://docs.microsoft.com/en-us/dotnet/core/rid-catalog#macos-rids
+let runtimeIds =
+    [
+        "osx-x64"
+        "linux-x64"
+    ]
+
+// --------------------------------------------------------------------------------------------------------
+// 2. Utilities, DotnetCore functions, etc.
+// --------------------------------------------------------------------------------------------------------
+
+[<AutoOpen>]
+module private Utils =
+    let tee f a =
+        f a
+        a
+
+    let skipOn option action p =
+        if p.Context.Arguments |> Seq.contains option
+        then Trace.tracefn "Skipped ..."
+        else action p
+
+    let createProcess exe arg dir =
+        CreateProcess.fromRawCommandLine exe arg
+        |> CreateProcess.withWorkingDirectory dir
+        |> CreateProcess.ensureExitCode
+
+    let run proc arg dir =
+        proc arg dir
+        |> Proc.run
         |> ignore
 
-    let runInRoot cmd = run cmd "."
-    let runInRootOrFail cmd = runOrFail cmd "."
+    let orFail = function
+        | Error e -> raise e
+        | Ok ok -> ok
 
-    let installOrUpdateTool tool =
-        // Global tool dir must be in PATH - ${PATH}:/root/.dotnet/tools
-        let toolCommand action =
-            sprintf "tool %s --tool-path ./tools %s" action tool
+    let stringToOption = function
+        | null | "" -> None
+        | string -> Some string
 
-        match runInRoot (toolCommand "install") with
-        | { ExitCode = code } when code <> 0 -> runInRootOrFail (toolCommand "update")
-        | _ -> ()
+[<RequireQualifiedAccess>]
+module Dotnet =
+    let dotnet = createProcess "dotnet"
 
-    let execute command args (dir: string) =
-        let cmd =
-            sprintf "%s/%s"
-                (dir.TrimEnd('/'))
-                command
+    let run command dir = try run dotnet command dir |> Ok with e -> Error e
+    let runInRoot command = run command "."
+    let runOrFail command dir = run command dir |> orFail
+    let runInRootOrFail command = run command "." |> orFail
 
-        let processInfo = System.Diagnostics.ProcessStartInfo(cmd)
-        processInfo.RedirectStandardOutput <- true
-        processInfo.RedirectStandardError <- true
-        processInfo.UseShellExecute <- false
-        processInfo.CreateNoWindow <- true
-        processInfo.Arguments <- args |> String.concat " "
+[<RequireQualifiedAccess>]
+module ProjectSources =
+    let release =
+        !! "./*.fsproj"
 
-        use proc =
-            new System.Diagnostics.Process(
-                StartInfo = processInfo
-            )
-        if proc.Start() |> not then failwith "Process was not started."
-        proc.WaitForExit()
+    let tests =
+        !! "tests/*.fsproj"
 
-        if proc.ExitCode <> 0 then failwithf "Command '%s' failed in %s." command dir
-        (proc.StandardOutput.ReadToEnd(), proc.StandardError.ReadToEnd())
+    let all =
+        !! "./*.fsproj"
+        ++ "src/**/*.fsproj"
+        ++ "tests/*.fsproj"
 
-let skipOn option action p =
-    if p.Context.Arguments |> Seq.contains option
-    then Trace.tracefn "Skipped ..."
-    else action p
+// --------------------------------------------------------------------------------------------------------
+// 3. Targets for FAKE
+// --------------------------------------------------------------------------------------------------------
 
 Target.create "Clean" <| skipOn "no-clean" (fun _ ->
-    !! "./**/bin"
+    !! "./**/bin/Release"
+    ++ "./**/bin/Debug"
     ++ "./**/obj"
+    ++ "./**/.ionide"
     |> Shell.cleanDirs
 )
 
+Target.create "AssemblyInfo" (fun _ ->
+    let getAssemblyInfoAttributes projectName =
+        let now = DateTime.Now
+
+        let release =
+            changeLog
+            |> Option.bind (fun changeLog ->
+                try ReleaseNotes.parse (System.IO.File.ReadAllLines changeLog |> Seq.filter ((<>) "## Unreleased")) |> Some
+                with _ -> None
+            )
+
+        let gitValue initialValue =
+            initialValue
+            |> stringToOption
+            |> Option.defaultValue "unknown"
+
+        [
+            AssemblyInfo.Title projectName
+            AssemblyInfo.Product project
+            AssemblyInfo.Description summary
+
+            match release with
+            | Some release ->
+                AssemblyInfo.Version release.AssemblyVersion
+                AssemblyInfo.FileVersion release.AssemblyVersion
+            | _ ->
+                AssemblyInfo.Version "1.0"
+                AssemblyInfo.FileVersion "1.0"
+
+            AssemblyInfo.InternalsVisibleTo "tests"
+            AssemblyInfo.Metadata("gitbranch", gitBranch |> gitValue)
+            AssemblyInfo.Metadata("gitcommit", gitCommit |> gitValue)
+            AssemblyInfo.Metadata("createdAt", now.ToString("yyyy-MM-dd HH:mm:ss"))
+        ]
+
+    let getProjectDetails (projectPath: string) =
+        let projectName = IO.Path.GetFileNameWithoutExtension(projectPath)
+        (
+            projectPath,
+            projectName,
+            IO.Path.GetDirectoryName(projectPath),
+            (getAssemblyInfoAttributes projectName)
+        )
+
+    ProjectSources.all
+    |> Seq.map getProjectDetails
+    |> Seq.iter (fun (_, _, folderName, attributes) ->
+        AssemblyInfoFile.createFSharp (folderName </> "AssemblyInfo.fs") attributes
+    )
+)
+
 Target.create "Build" (fun _ ->
-    !! "./**/*.*proj"
+    ProjectSources.all
     |> Seq.iter (DotNet.build id)
 )
 
-Target.create "Lint" (fun p ->
-    DotnetCore.installOrUpdateTool "dotnet-fsharplint"
-
-    let checkResult (messages: string list) =
-        let rec check: string list -> unit = function
-            | [] -> failwithf "Lint does not yield a summary."
-            | head::rest ->
-                if head.Contains("Summary") then
-                    match head.Replace("= ", "").Replace(" =", "").Replace("=", "").Replace("Summary: ", "") with
-                    | "0 warnings" -> Trace.tracefn "Lint: OK"
-                    | warnings ->
-                        if p.Context.Arguments |> List.contains "no-lint"
-                        then Trace.traceErrorfn "Lint ends up with %s." warnings
-                        else failwithf "Lint ends up with %s." warnings
-                else check rest
-        messages
-        |> List.rev
-        |> check
-
-    !! "**/*.fsproj"
-    |> Seq.map (fun fsproj ->
-        DotnetCore.execute "dotnet-fsharplint" ["-f"; fsproj] "tools"
-        |> fst
-        |> tee (Trace.tracefn "%s")
-        |> String.split '\n'
-        |> Seq.toList
+Target.create "Lint" <| skipOn "no-lint" (fun _ ->
+    ProjectSources.all
+    ++ "./Build.fsproj"
+    |> Seq.iter (fun fsproj ->
+        match Dotnet.runInRoot (sprintf "fsharplint lint %s" fsproj) with
+        | Ok () -> Trace.tracefn "Lint %s is Ok" fsproj
+        | Error e -> raise e
     )
-    |> Seq.iter checkResult
 )
 
 Target.create "Tests" (fun _ ->
-    Trace.tracefn "There are no tests yet."
-    //DotnetCore.runOrFail "run" "tests"
+    if ProjectSources.tests |> Seq.isEmpty
+    then Trace.tracefn "There are no tests yet."
+    else Dotnet.runOrFail "run" "tests"
 )
 
+let zipRelease releaseDir =
+    Trace.tracefn "\nZip compiled files"
+    runtimeIds
+    |> List.iter (fun runtimeId ->
+        Trace.tracefn " -> zipping %s ..." runtimeId
+        let zipFile = sprintf "%s.zip" runtimeId
+        IO.File.Delete zipFile
+        Zip.zip releaseDir (releaseDir </> zipFile) !!(releaseDir </> runtimeId </> "*")
+    )
+
+    if releaseDir </> "zipCompiled" |> File.exists
+    then
+        let zipReleaseProcess = createProcess (releaseDir </> "zipCompiled")
+
+        Trace.tracefn "\nZipping released files in %s ..." releaseDir
+        run zipReleaseProcess "" "."
+        |> Trace.tracefn "Zip result:\n%A\n"
+
+Target.create "Release" (fun _ ->
+    let releaseDir = Path.getFullName releaseDir
+
+    Trace.tracefn "\nClean previous releases"
+    runtimeIds
+    |> Seq.collect (fun runtimeId ->
+        Trace.tracefn " - %s" runtimeId
+        !! (releaseDir </> runtimeId)
+    )
+    |> Shell.cleanDirs
+
+    Trace.tracefn "\nClean previous zipped releases"
+    !! (releaseDir </> "*.zip")
+    ++ (releaseDir </> "*.tar.gz")
+    |> Seq.map (tee (Trace.tracefn " - %s"))
+    |> Seq.iter File.delete
+
+    Trace.tracefn "\nPublish current release"
+    ProjectSources.release
+    |> Seq.collect (fun project -> runtimeIds |> List.collect (fun runtimeId -> [project, runtimeId]))
+    |> Seq.iter (fun (project, runtimeId) ->
+        sprintf "publish -c Release /p:PublishSingleFile=true -o %s/%s --self-contained -r %s %s" releaseDir runtimeId runtimeId project
+        |> Dotnet.runInRootOrFail
+    )
+
+    zipRelease releaseDir
+)
+
+Target.create "Watch" (fun _ ->
+    Dotnet.runInRootOrFail "watch run"
+)
+
+Target.create "Run" (fun _ ->
+    Dotnet.runInRootOrFail "run"
+)
+
+// --------------------------------------------------------------------------------------------------------
+// 4. FAKE targets hierarchy
+// --------------------------------------------------------------------------------------------------------
+
 "Clean"
+    ==> "AssemblyInfo"
     ==> "Build"
     ==> "Lint"
     ==> "Tests"
+    ==> "Release"
+
+"Build"
+    ==> "Watch" <=> "Run"
 
 Target.runOrDefaultWithArguments "Build"
